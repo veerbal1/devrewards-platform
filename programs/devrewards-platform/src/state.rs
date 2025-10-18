@@ -8,7 +8,8 @@ pub struct TokenConfig {
     pub admin: Pubkey,
     pub daily_claim_amount: u64,
     pub config_bump: u8,
-    pub mint_authority_bump: u8
+    pub mint_authority_bump: u8,
+    pub mint_bump: u8
 }
 
 impl TokenConfig {

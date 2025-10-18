@@ -18,6 +18,8 @@ pub struct Initialize<'info> {
         payer = admin,
         mint::decimals = 9,
         mint::authority = mint_authority,
+        seeds = [b"devr-mint"],
+        bump
     )]
     pub mint: Account<'info, Mint>,
 
@@ -43,8 +45,9 @@ pub fn handler(ctx: Context<Initialize>) -> Result<()> {
     config.mint_authority = ctx.accounts.mint_authority.key();
     config.admin = ctx.accounts.admin.key();
     config.daily_claim_amount = 100_000_000_000;
-    config.mint_authority_bump = ctx.bumps.mint_authority;
     config.config_bump = ctx.bumps.config;
+    config.mint_authority_bump = ctx.bumps.mint_authority;
+    config.mint_bump = ctx.bumps.mint;
 
     msg!("DevRewards initialized!");
     msg!("Mint: {}", config.mint);
