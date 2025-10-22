@@ -9,9 +9,22 @@ pub struct TokenConfig {
     pub daily_claim_amount: u64,
     pub config_bump: u8,
     pub mint_authority_bump: u8,
-    pub mint_bump: u8
+    pub mint_bump: u8,
 }
 
 impl TokenConfig {
-    pub const LEN:usize =  8 + Self::INIT_SPACE;
+    pub const LEN: usize = 8 + Self::INIT_SPACE;
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct UserClaim {
+    pub user: Pubkey,         // Kis user ne claim kiya
+    pub last_claim_time: i64, // Unix timestamp
+    pub total_claimed: u64,   // Kitna total claim kiya (analytics ke liye)
+    pub bump: u8,             // PDA bump
+}
+
+impl UserClaim {
+    pub const LEN: usize = 8 + Self::INIT_SPACE;
 }
