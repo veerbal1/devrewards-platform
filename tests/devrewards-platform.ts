@@ -1,8 +1,8 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { DevrewardsPlatform } from "../target/types/devrewards_platform";
-import { PublicKey, SystemProgram } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID, getMint } from "@solana/spl-token";
+import { PublicKey } from "@solana/web3.js";
+import { getMint } from "@solana/spl-token";
 import { expect } from "chai";
 
 describe("devrewards-platform", () => {
