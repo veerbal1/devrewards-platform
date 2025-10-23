@@ -3,9 +3,9 @@ use instructions::*;
 
 declare_id!("8PZ8EXjLqDxeRHUEL7o53eVceh5MgwPT6aJWZUu5AjTq");
 
-mod state;
-mod instructions;
 mod error;
+mod instructions;
+mod state;
 
 #[program]
 pub mod devrewards_platform {
@@ -17,5 +17,21 @@ pub mod devrewards_platform {
 
     pub fn claim_tokens(ctx: Context<ClaimTokens>) -> Result<()> {
         instructions::claim_tokens::handler(ctx)
+    }
+
+    pub fn transfer(ctx: Context<TransferTokens>, amount: u64) -> Result<()> {
+        instructions::transfer_tokens::handler(ctx, amount)
+    }
+
+    pub fn approve_delegate(ctx: Context<ApproveDelegate>, amount: u64) -> Result<()> {
+        instructions::approve_delegate::handler(ctx, amount)
+    }
+
+    pub fn delegated_transfer(ctx: Context<DelegatedTransfer>, amount: u64) -> Result<()> {
+        instructions::delegated_transfer::handler(ctx, amount)
+    }
+
+    pub fn revoke_delegate(ctx: Context<RevokeDelegate>) -> Result<()> {
+        instructions::revoke_delegate::handler(ctx)
     }
 }

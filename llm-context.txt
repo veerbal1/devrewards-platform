@@ -1,0 +1,627 @@
+# Code Context for LLM
+# Generated: 2025-10-23T11:44:35.431Z
+# Total files: 8
+
+================================================================================
+
+## Table of Contents
+
+1. programs/devrewards-platform/src/error.rs
+2. programs/devrewards-platform/src/instructions/claim_tokens.rs
+3. programs/devrewards-platform/src/instructions/initialize.rs
+4. programs/devrewards-platform/src/instructions/mod.rs
+5. programs/devrewards-platform/src/lib.rs
+6. programs/devrewards-platform/src/mod.rs
+7. programs/devrewards-platform/src/state.rs
+8. tests/devrewards-platform.ts
+
+================================================================================
+
+## File: programs/devrewards-platform/src/error.rs
+================================================================================
+
+```rs
+use anchor_lang::prelude::*;
+
+#[error_code]
+pub enum ErrorCode {
+    #[msg("You must wait 24 hours between claims!")]
+    ClaimTooSoon = 0,
+}
+
+```
+
+================================================================================
+
+## File: programs/devrewards-platform/src/instructions/claim_tokens.rs
+================================================================================
+
+```rs
+use crate::error::ErrorCode;
+use crate::state::{TokenConfig, UserClaim};
+use anchor_lang::prelude::*;
+use anchor_spl::{
+    associated_token::AssociatedToken,
+    token::{mint_to, Mint, MintTo, Token, TokenAccount},
+};
+
+#[derive(Accounts)]
+pub struct ClaimTokens<'info> {
+    #[account(
+        seeds = [b"config"],
+        bump = config.config_bump
+    )]
+    pub config: Account<'info, TokenConfig>,
+
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = UserClaim::LEN,
+        seeds = [b"user-claim", user.key().as_ref()],
+        bump
+    )]
+    pub user_claim: Account<'info, UserClaim>,
+
+    #[account(mut, address = config.mint)]
+    pub mint: Account<'info, Mint>,
+
+    /// CHECK: This is a PDA used as the mint authority, validated by seeds and bump
+    #[account(
+        seeds = [b"mint-authority"],
+        bump = config.mint_authority_bump
+    )]
+    pub mint_authority: UncheckedAccount<'info>,
+
+    #[account(
+        init_if_needed,
+        payer = user,
+        associated_token::mint = mint,
+        associated_token::authority = user
+    )]
+    pub user_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn handler(ctx: Context<ClaimTokens>) -> Result<()> {
+    let user_claim = &mut ctx.accounts.user_claim;
+    let config = &ctx.accounts.config;
+    let clock = Clock::get()?;
+    let current_time = clock.unix_timestamp;
+
+    // Check cooldown (skip check for first-time claimers)
+    if user_claim.last_claim_time != 0 {
+        let time_elapsed = current_time - user_claim.last_claim_time;
+
+        if time_elapsed < 86400 {
+            msg!("Time remaining: {} seconds", 86400 - time_elapsed);
+            return Err(error!(ErrorCode::ClaimTooSoon));
+        }
+    }
+
+    // Setup CPI accounts for minting tokens
+    let cpi_accounts = MintTo {
+        mint: ctx.accounts.mint.to_account_info(),
+        to: ctx.accounts.user_token_account.to_account_info(),
+        authority: ctx.accounts.mint_authority.to_account_info(),
+    };
+
+    let cpi_program = ctx.accounts.token_program.to_account_info();
+    let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
+
+    // Create signer seeds with bump for PDA
+    let seeds = &[
+        b"mint-authority".as_ref(),
+        &[config.mint_authority_bump],
+    ];
+    let signer = &[&seeds[..]];
+
+    // Mint tokens to user's token account
+    mint_to(
+        cpi_ctx.with_signer(signer),
+        config.daily_claim_amount
+    )?;
+
+    // Update user claim state
+    if user_claim.user == Pubkey::default() {
+        user_claim.user = ctx.accounts.user.key();
+        user_claim.bump = ctx.bumps.user_claim;
+    }
+
+    user_claim.last_claim_time = current_time;
+    user_claim.total_claimed += config.daily_claim_amount;
+
+    msg!("Tokens claimed successfully!");
+    msg!("Amount claimed: {}", config.daily_claim_amount);
+    msg!("Total claimed: {}", user_claim.total_claimed);
+    msg!("Next claim available in 24 hours");
+
+    Ok(())
+}
+
+```
+
+================================================================================
+
+## File: programs/devrewards-platform/src/instructions/initialize.rs
+================================================================================
+
+```rs
+use crate::state::TokenConfig;
+use anchor_lang::prelude::*;
+use anchor_spl::token::{Mint, Token};
+
+#[derive(Accounts)]
+pub struct Initialize<'info> {
+    #[account(
+        init,
+        payer = admin,
+        space = TokenConfig::LEN,
+        seeds = [b"config"],
+        bump
+    )]
+    pub config: Account<'info, TokenConfig>,
+
+    #[account(
+        init,
+        payer = admin,
+        mint::decimals = 9,
+        mint::authority = mint_authority,
+        seeds = [b"devr-mint"],
+        bump
+    )]
+    pub mint: Account<'info, Mint>,
+
+    /// CHECK: PDA derived from seeds, used as mint authority
+    #[account(
+        seeds = [b"mint-authority"],
+        bump
+    )]
+    pub mint_authority: UncheckedAccount<'info>,
+
+    #[account(mut)]
+    pub admin: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+
+    pub system_program: Program<'info, System>,
+}
+
+pub fn handler(ctx: Context<Initialize>) -> Result<()> {
+    let config = &mut ctx.accounts.config;
+
+    config.mint = ctx.accounts.mint.key();
+    config.mint_authority = ctx.accounts.mint_authority.key();
+    config.admin = ctx.accounts.admin.key();
+    config.daily_claim_amount = 100_000_000_000;
+    config.config_bump = ctx.bumps.config;
+    config.mint_authority_bump = ctx.bumps.mint_authority;
+    config.mint_bump = ctx.bumps.mint;
+
+    msg!("DevRewards initialized!");
+    msg!("Mint: {}", config.mint);
+    msg!("Authority: {}", config.mint_authority);
+    Ok(())
+}
+
+```
+
+================================================================================
+
+## File: programs/devrewards-platform/src/instructions/mod.rs
+================================================================================
+
+```rs
+pub mod initialize;
+pub mod claim_tokens;
+
+pub use initialize::*;
+pub use claim_tokens::*;
+```
+
+================================================================================
+
+## File: programs/devrewards-platform/src/lib.rs
+================================================================================
+
+```rs
+use anchor_lang::prelude::*;
+use instructions::*;
+
+declare_id!("8PZ8EXjLqDxeRHUEL7o53eVceh5MgwPT6aJWZUu5AjTq");
+
+mod state;
+mod instructions;
+mod error;
+
+#[program]
+pub mod devrewards_platform {
+    use super::*;
+
+    pub fn initialize(ctx: Context<Initialize>) -> Result<()> {
+        instructions::initialize::handler(ctx)
+    }
+
+    pub fn claim_tokens(ctx: Context<ClaimTokens>) -> Result<()> {
+        instructions::claim_tokens::handler(ctx)
+    }
+}
+
+```
+
+================================================================================
+
+## File: programs/devrewards-platform/src/mod.rs
+================================================================================
+
+```rs
+pub mod instructions;
+```
+
+================================================================================
+
+## File: programs/devrewards-platform/src/state.rs
+================================================================================
+
+```rs
+use anchor_lang::prelude::*;
+
+#[account]
+#[derive(InitSpace)]
+pub struct TokenConfig {
+    pub mint: Pubkey,
+    pub mint_authority: Pubkey,
+    pub admin: Pubkey,
+    pub daily_claim_amount: u64,
+    pub config_bump: u8,
+    pub mint_authority_bump: u8,
+    pub mint_bump: u8,
+}
+
+impl TokenConfig {
+    pub const LEN: usize = 8 + Self::INIT_SPACE;
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct UserClaim {
+    pub user: Pubkey,         // Kis user ne claim kiya
+    pub last_claim_time: i64, // Unix timestamp
+    pub total_claimed: u64,   // Kitna total claim kiya (analytics ke liye)
+    pub bump: u8,             // PDA bump
+}
+
+impl UserClaim {
+    pub const LEN: usize = 8 + Self::INIT_SPACE;
+}
+
+```
+
+================================================================================
+
+## File: tests/devrewards-platform.ts
+================================================================================
+
+```ts
+import * as anchor from "@coral-xyz/anchor";
+import { Program } from "@coral-xyz/anchor";
+import { DevrewardsPlatform } from "../target/types/devrewards_platform";
+import { PublicKey, Keypair } from "@solana/web3.js";
+import { getMint, getAccount, getAssociatedTokenAddress } from "@solana/spl-token";
+import { expect } from "chai";
+
+describe("devrewards-platform", () => {
+  const provider = anchor.AnchorProvider.env();
+  anchor.setProvider(provider);
+
+  const program = anchor.workspace.DevrewardsPlatform as Program<DevrewardsPlatform>;
+  const admin = provider.wallet as anchor.Wallet;
+
+  // Shared PDAs - derived once, used across tests
+  let configPda: PublicKey;
+  let mintAuthorityPda: PublicKey;
+  let mintPda: PublicKey;
+
+  // Run ONCE before all tests - only for immutable setup
+  before(async () => {
+    // Derive program-level PDAs (these never change)
+    [configPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("config")],
+      program.programId
+    );
+
+    [mintAuthorityPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("mint-authority")],
+      program.programId
+    );
+
+    [mintPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("devr-mint")],
+      program.programId
+    );
+  });
+
+  /**
+   * Fixture: Ensures the program is initialized
+   * Safe to call multiple times - checks if already initialized
+   */
+  async function setupInitializedProgram() {
+    try {
+      await program.account.tokenConfig.fetch(configPda);
+      // Already initialized, skip
+    } catch {
+      // Not initialized yet, initialize now
+      await program.methods.initialize().rpc();
+    }
+  }
+
+  describe("Initialization", () => {
+    it("should initialize program with correct config", async () => {
+      await program.methods.initialize().rpc();
+
+      const configAccount = await program.account.tokenConfig.fetch(configPda);
+
+      expect(configAccount.mint.toString()).to.equal(mintPda.toString());
+      expect(configAccount.mintAuthority.toString()).to.equal(mintAuthorityPda.toString());
+      expect(configAccount.admin.toString()).to.equal(admin.publicKey.toString());
+      expect(configAccount.dailyClaimAmount.toString()).to.equal("100000000000");
+    });
+
+    it("should create mint with correct properties", async () => {
+      await setupInitializedProgram();
+
+      const mintAccount = await getMint(provider.connection, mintPda);
+
+      expect(mintAccount.decimals).to.equal(9);
+      expect(mintAccount.mintAuthority?.toString()).to.equal(mintAuthorityPda.toString());
+      // Initial supply is 0 before any claims
+      expect(Number(mintAccount.supply)).to.be.greaterThanOrEqual(0);
+    });
+
+    it("should prevent double initialization", async () => {
+      await setupInitializedProgram();
+
+      try {
+        await program.methods.initialize().rpc();
+        expect.fail("Should have thrown error on double initialization");
+      } catch (error: any) {
+        // Expected - account already exists
+        expect(error).to.exist;
+      }
+    });
+  });
+
+  describe("Token Claims", () => {
+    // REQUIRES: Program initialized (handled in beforeEach)
+    beforeEach(async () => {
+      await setupInitializedProgram();
+    });
+
+    it("should allow user to claim tokens for the first time", async () => {
+      const user = admin;
+      const [userClaimPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("user-claim"), user.publicKey.toBuffer()],
+        program.programId
+      );
+      const userTokenAccount = await getAssociatedTokenAddress(
+        mintPda,
+        user.publicKey
+      );
+
+      // Attempt to claim (might already exist if tests ran before)
+      let claimAccount: any;
+      try {
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: user.publicKey,
+          })
+          .rpc();
+
+        claimAccount = await program.account.userClaim.fetch(userClaimPda);
+      } catch (error: any) {
+        // If claim already exists (cooldown error), just fetch it
+        if (error.error?.errorCode?.number === 6000) {
+          claimAccount = await program.account.userClaim.fetch(userClaimPda);
+        } else {
+          throw error;
+        }
+      }
+
+      // Verify user token balance
+      const tokenAccountInfo = await getAccount(provider.connection, userTokenAccount);
+      expect(Number(tokenAccountInfo.amount)).to.be.greaterThan(0);
+
+      // Verify claim account state
+      expect(claimAccount.user.toString()).to.equal(user.publicKey.toString());
+      expect(Number(claimAccount.totalClaimed)).to.be.greaterThan(0);
+      expect(claimAccount.lastClaimTime.toNumber()).to.be.greaterThan(0);
+    });
+
+    it("should prevent claiming again within 24 hour cooldown", async () => {
+      const user = admin;
+
+      // First, ensure user has claimed at least once
+      let firstClaimSucceeded = false;
+      try {
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: user.publicKey,
+          })
+          .rpc();
+        firstClaimSucceeded = true;
+      } catch (error: any) {
+        // Only acceptable if already claimed (cooldown error)
+        if (error.error?.errorCode?.number === 6000) {
+          // Already claimed previously, that's fine
+          firstClaimSucceeded = false;
+        } else {
+          // Unexpected error, propagate it
+          throw error;
+        }
+      }
+
+      // Now try to claim again immediately - should always fail with cooldown
+      try {
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: user.publicKey,
+          })
+          .rpc();
+
+        expect.fail("Should have thrown ClaimTooSoon error");
+      } catch (error: any) {
+        expect(error.error?.errorCode?.number).to.equal(6000);
+      }
+    });
+
+    it("should track total claimed amount correctly", async () => {
+      const user = admin;
+      const [userClaimPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("user-claim"), user.publicKey.toBuffer()],
+        program.programId
+      );
+
+      // Ensure user has claimed at least once
+      try {
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: user.publicKey,
+          })
+          .rpc();
+      } catch {
+        // Already claimed
+      }
+
+      const claimAccount = await program.account.userClaim.fetch(userClaimPda);
+      const configAccount = await program.account.tokenConfig.fetch(configPda);
+
+      // Total claimed should be a multiple of daily claim amount
+      const dailyAmount = configAccount.dailyClaimAmount;
+      const totalClaimed = claimAccount.totalClaimed;
+
+      expect(Number(totalClaimed) % Number(dailyAmount)).to.equal(0);
+    });
+
+    it("should allow multiple users to claim independently", async () => {
+      // User A: admin (already has funds)
+      const userA = admin;
+      const [userAClaimPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("user-claim"), userA.publicKey.toBuffer()],
+        program.programId
+      );
+
+      // User B: new keypair
+      const userB = Keypair.generate();
+      const [userBClaimPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("user-claim"), userB.publicKey.toBuffer()],
+        program.programId
+      );
+
+      // Fund User B for transaction fees
+      const airdropSig = await provider.connection.requestAirdrop(
+        userB.publicKey,
+        2 * anchor.web3.LAMPORTS_PER_SOL
+      );
+      await provider.connection.confirmTransaction({
+        signature: airdropSig,
+        ...(await provider.connection.getLatestBlockhash()),
+      });
+
+      // User B claims tokens
+      await program.methods
+        .claimTokens()
+        .accounts({
+          mint: mintPda,
+          user: userB.publicKey,
+        })
+        .signers([userB])
+        .rpc();
+
+      // Verify both users have independent claim accounts
+      const claimAccountA = await program.account.userClaim.fetch(userAClaimPda);
+      const claimAccountB = await program.account.userClaim.fetch(userBClaimPda);
+
+      expect(claimAccountA.user.toString()).to.equal(userA.publicKey.toString());
+      expect(claimAccountB.user.toString()).to.equal(userB.publicKey.toString());
+
+      // Both should have positive balances
+      expect(Number(claimAccountA.totalClaimed)).to.be.greaterThan(0);
+      expect(Number(claimAccountB.totalClaimed)).to.be.greaterThan(0);
+
+      // Claim times should be independent
+      expect(claimAccountA.lastClaimTime.toNumber()).to.not.equal(claimAccountB.lastClaimTime.toNumber());
+    });
+  });
+
+  describe("State Verification", () => {
+    beforeEach(async () => {
+      await setupInitializedProgram();
+    });
+
+    it("should maintain correct total supply across claims", async () => {
+      // Ensure at least one claim exists
+      try {
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: admin.publicKey,
+          })
+          .rpc();
+      } catch {
+        // Already claimed
+      }
+
+      const mintInfo = await getMint(provider.connection, mintPda);
+
+      // Total supply should be positive after claims
+      expect(Number(mintInfo.supply)).to.be.greaterThan(0);
+    });
+
+    it("should store claim timestamp correctly", async () => {
+      const user = admin;
+      const [userClaimPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("user-claim"), user.publicKey.toBuffer()],
+        program.programId
+      );
+
+      // Ensure claim exists
+      try {
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: user.publicKey,
+          })
+          .rpc();
+      } catch {
+        // Already claimed
+      }
+
+      const claimAccount = await program.account.userClaim.fetch(userClaimPda);
+      const lastClaimTime = claimAccount.lastClaimTime.toNumber();
+      const currentTime = Math.floor(Date.now() / 1000);
+
+      // Claim time should be in the past, but not too far (within last hour for this test run)
+      expect(lastClaimTime).to.be.lessThanOrEqual(currentTime);
+      expect(lastClaimTime).to.be.greaterThan(currentTime - 3600);
+    });
+  });
+});
+```
+
+================================================================================
+
