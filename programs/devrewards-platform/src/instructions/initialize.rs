@@ -30,10 +30,23 @@ pub struct Initialize<'info> {
     )]
     pub mint_authority: UncheckedAccount<'info>,
 
-    #[account(init, payer = admin, token::mint = mint, token::authority = vault_authority, seeds=[b"vault"], bump)]
+    // NEW: Vault token account - shared pool for all staked tokens
+    #[account(
+        init,
+        payer = admin,
+        token::mint = mint,
+        token::authority = vault_authority,
+        seeds = [b"vault"],
+        bump
+    )]
     pub vault: Account<'info, TokenAccount>,
 
-    #[account(seeds=[b"vault-authority"], bump)]
+    // NEW: Vault authority PDA - controls vault transfers
+    /// CHECK: PDA derived from seeds, used as vault authority
+    #[account(
+        seeds = [b"vault-authority"],
+        bump
+    )]
     pub vault_authority: UncheckedAccount<'info>,
 
     #[account(mut)]
@@ -50,15 +63,20 @@ pub fn handler(ctx: Context<Initialize>) -> Result<()> {
     config.mint = ctx.accounts.mint.key();
     config.mint_authority = ctx.accounts.mint_authority.key();
     config.admin = ctx.accounts.admin.key();
+    config.vault = ctx.accounts.vault.key();
+    config.vault_authority = ctx.accounts.vault_authority.key();
     config.daily_claim_amount = 100_000_000_000;
     config.config_bump = ctx.bumps.config;
     config.mint_authority_bump = ctx.bumps.mint_authority;
     config.mint_bump = ctx.bumps.mint;
+    config.vault_bump = ctx.bumps.vault;
+    config.vault_authority_bump = ctx.bumps.vault_authority;
 
-    msg!("DevRewards initialized!");
+    msg!("✅ DevRewards initialized!");
     msg!("Mint: {}", config.mint);
-    msg!("Authority: {}", config.mint_authority);
+    msg!("Mint Authority: {}", config.mint_authority);
     msg!("Vault: {}", ctx.accounts.vault.key());
     msg!("Vault Authority: {}", ctx.accounts.vault_authority.key());
+
     Ok(())
 }

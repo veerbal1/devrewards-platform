@@ -3,6 +3,7 @@ use instructions::*;
 
 declare_id!("8PZ8EXjLqDxeRHUEL7o53eVceh5MgwPT6aJWZUu5AjTq");
 
+mod constants;
 mod error;
 mod instructions;
 mod state;
@@ -33,5 +34,13 @@ pub mod devrewards_platform {
 
     pub fn revoke_delegate(ctx: Context<RevokeDelegate>) -> Result<()> {
         instructions::revoke_delegate::handler(ctx)
+    }
+
+    pub fn stake(ctx: Context<Stake>, amount: u64, lock_duration: i64) -> Result<()> {
+        instructions::stake::handler(ctx, amount, lock_duration)
+    }
+
+    pub fn unstake(ctx: Context<Unstake>) -> Result<()> {
+        instructions::unstake::handler(ctx)
     }
 }

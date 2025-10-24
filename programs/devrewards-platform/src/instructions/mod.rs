@@ -4,6 +4,8 @@ pub mod transfer_tokens;
 pub mod approve_delegate;
 pub mod delegated_transfer;
 pub mod revoke_delegate;
+pub mod stake;
+pub mod unstake;
 
 pub use initialize::*;
 pub use claim_tokens::*;
@@ -11,3 +13,5 @@ pub use transfer_tokens::*;
 pub use approve_delegate::*;
 pub use delegated_transfer::*;
 pub use revoke_delegate::*;
+pub use stake::*;
+pub use unstake::*;

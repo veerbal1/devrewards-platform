@@ -588,4 +588,719 @@ describe("devrewards-platform", () => {
       });
     });
   });
+
+  describe("Day 18: Token Staking - Lock & Earn", () => {
+    let staker: Keypair;
+    let stakerTokenAccount: PublicKey;
+    let vaultPda: PublicKey;
+    let vaultAuthorityPda: PublicKey;
+    let stakeAccountPda: PublicKey;
+
+    const SECONDS_PER_DAY = 86400;
+    const MIN_LOCK_DURATION = 7 * SECONDS_PER_DAY; // 7 days
+    const MAX_LOCK_DURATION = 10 * 365 * SECONDS_PER_DAY; // 10 years
+
+    before(async () => {
+      // Ensure program is initialized
+      await setupInitializedProgram();
+
+      // Create staker keypair
+      staker = Keypair.generate();
+
+      // Airdrop 5 SOL for transaction fees
+      const airdrop = await provider.connection.requestAirdrop(
+        staker.publicKey,
+        5 * anchor.web3.LAMPORTS_PER_SOL
+      );
+      await provider.connection.confirmTransaction({
+        signature: airdrop,
+        ...(await provider.connection.getLatestBlockhash()),
+      });
+
+      // Derive vault PDAs
+      [vaultPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("vault")],
+        program.programId
+      );
+
+      [vaultAuthorityPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("vault-authority")],
+        program.programId
+      );
+
+      // Derive stake account PDA
+      [stakeAccountPda] = PublicKey.findProgramAddressSync(
+        [Buffer.from("stake"), staker.publicKey.toBuffer()],
+        program.programId
+      );
+
+      // Get staker's token account
+      stakerTokenAccount = await getAssociatedTokenAddress(mintPda, staker.publicKey);
+
+      // Staker claims 1000 DEVR tokens
+      await program.methods
+        .claimTokens()
+        .accounts({
+          mint: mintPda,
+          user: staker.publicKey,
+        })
+        .signers([staker])
+        .rpc();
+    });
+
+    describe("Stake Instruction - Valid Cases", () => {
+      it("should stake tokens successfully with valid amount and duration", async () => {
+        const stakeAmount = new anchor.BN(100_000_000_000); // 100 DEVR
+        const lockDuration = new anchor.BN(30 * SECONDS_PER_DAY); // 30 days
+
+        // Get balances before staking
+        const stakerBalanceBefore = await getAccount(provider.connection, stakerTokenAccount);
+        const vaultBalanceBefore = await getAccount(provider.connection, vaultPda);
+
+        // Stake tokens
+        await program.methods
+          .stake(stakeAmount, lockDuration)
+          .accounts({
+            stakeAccount: stakeAccountPda,
+            userTokenAccount: stakerTokenAccount,
+            vault: vaultPda,
+            user: staker.publicKey,
+          })
+          .signers([staker])
+          .rpc();
+
+        // Get balances after staking
+        const stakerBalanceAfter = await getAccount(provider.connection, stakerTokenAccount);
+        const vaultBalanceAfter = await getAccount(provider.connection, vaultPda);
+
+        // Verify token transfer
+        expect(stakerBalanceAfter.amount).to.equal(
+          stakerBalanceBefore.amount - BigInt(stakeAmount.toString())
+        );
+        expect(vaultBalanceAfter.amount).to.equal(
+          vaultBalanceBefore.amount + BigInt(stakeAmount.toString())
+        );
+
+        // Verify stake account
+        const stakeAccount = await program.account.stakeAccount.fetch(stakeAccountPda);
+        expect(stakeAccount.user.toString()).to.equal(staker.publicKey.toString());
+        expect(stakeAccount.stakedAmount.toString()).to.equal(stakeAmount.toString());
+        expect(stakeAccount.lockDuration.toString()).to.equal(lockDuration.toString());
+        expect(stakeAccount.stakedAt.toNumber()).to.be.greaterThan(0);
+      });
+
+      it("should stake minimum allowed amount (1 DEVR)", async () => {
+        const newStaker = Keypair.generate();
+
+        // Airdrop SOL
+        const airdrop = await provider.connection.requestAirdrop(
+          newStaker.publicKey,
+          2 * anchor.web3.LAMPORTS_PER_SOL
+        );
+        await provider.connection.confirmTransaction({
+          signature: airdrop,
+          ...(await provider.connection.getLatestBlockhash()),
+        });
+
+        // Claim tokens
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: newStaker.publicKey,
+          })
+          .signers([newStaker])
+          .rpc();
+
+        const minStakeAmount = new anchor.BN(1_000_000_000); // 1 DEVR
+        const lockDuration = new anchor.BN(MIN_LOCK_DURATION);
+
+        const [newStakerStakeAccountPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from("stake"), newStaker.publicKey.toBuffer()],
+          program.programId
+        );
+
+        const newStakerTokenAccount = await getAssociatedTokenAddress(
+          mintPda,
+          newStaker.publicKey
+        );
+
+        await program.methods
+          .stake(minStakeAmount, lockDuration)
+          .accounts({
+            stakeAccount: newStakerStakeAccountPda,
+            userTokenAccount: newStakerTokenAccount,
+            vault: vaultPda,
+            user: newStaker.publicKey,
+          })
+          .signers([newStaker])
+          .rpc();
+
+        const stakeAccount = await program.account.stakeAccount.fetch(newStakerStakeAccountPda);
+        expect(stakeAccount.stakedAmount.toString()).to.equal(minStakeAmount.toString());
+      });
+
+      it("should stake with minimum duration (7 days)", async () => {
+        const newStaker = Keypair.generate();
+
+        // Airdrop SOL
+        const airdrop = await provider.connection.requestAirdrop(
+          newStaker.publicKey,
+          2 * anchor.web3.LAMPORTS_PER_SOL
+        );
+        await provider.connection.confirmTransaction({
+          signature: airdrop,
+          ...(await provider.connection.getLatestBlockhash()),
+        });
+
+        // Claim tokens
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: newStaker.publicKey,
+          })
+          .signers([newStaker])
+          .rpc();
+
+        const stakeAmount = new anchor.BN(50_000_000_000); // 50 DEVR
+        const minLockDuration = new anchor.BN(MIN_LOCK_DURATION); // 7 days
+
+        const [newStakerStakeAccountPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from("stake"), newStaker.publicKey.toBuffer()],
+          program.programId
+        );
+
+        const newStakerTokenAccount = await getAssociatedTokenAddress(
+          mintPda,
+          newStaker.publicKey
+        );
+
+        await program.methods
+          .stake(stakeAmount, minLockDuration)
+          .accounts({
+            stakeAccount: newStakerStakeAccountPda,
+            userTokenAccount: newStakerTokenAccount,
+            vault: vaultPda,
+            user: newStaker.publicKey,
+          })
+          .signers([newStaker])
+          .rpc();
+
+        const stakeAccount = await program.account.stakeAccount.fetch(newStakerStakeAccountPda);
+        expect(stakeAccount.lockDuration.toString()).to.equal(minLockDuration.toString());
+      });
+    });
+
+    describe("Stake Instruction - Error Cases", () => {
+      it("should fail when amount is too small (< 1 DEVR)", async () => {
+        const newStaker = Keypair.generate();
+
+        const airdrop = await provider.connection.requestAirdrop(
+          newStaker.publicKey,
+          2 * anchor.web3.LAMPORTS_PER_SOL
+        );
+        await provider.connection.confirmTransaction({
+          signature: airdrop,
+          ...(await provider.connection.getLatestBlockhash()),
+        });
+
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: newStaker.publicKey,
+          })
+          .signers([newStaker])
+          .rpc();
+
+        const tooSmallAmount = new anchor.BN(500_000_000); // 0.5 DEVR
+        const lockDuration = new anchor.BN(MIN_LOCK_DURATION);
+
+        const [newStakerStakeAccountPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from("stake"), newStaker.publicKey.toBuffer()],
+          program.programId
+        );
+
+        const newStakerTokenAccount = await getAssociatedTokenAddress(
+          mintPda,
+          newStaker.publicKey
+        );
+
+        try {
+          await program.methods
+            .stake(tooSmallAmount, lockDuration)
+            .accounts({
+              stakeAccount: newStakerStakeAccountPda,
+              userTokenAccount: newStakerTokenAccount,
+              vault: vaultPda,
+              user: newStaker.publicKey,
+            })
+            .signers([newStaker])
+            .rpc();
+
+          expect.fail("Should have thrown AmountTooSmall error");
+        } catch (error: any) {
+          expect(error.error?.errorCode?.number).to.equal(6001); // AmountTooSmall
+        }
+      });
+
+      it("should fail when amount is too large (> 100,000 DEVR)", async () => {
+        const tooLargeAmount = new anchor.BN(150_000_000_000_000); // 150,000 DEVR
+        const lockDuration = new anchor.BN(MIN_LOCK_DURATION);
+
+        const newStaker = Keypair.generate();
+
+        const airdrop = await provider.connection.requestAirdrop(
+          newStaker.publicKey,
+          2 * anchor.web3.LAMPORTS_PER_SOL
+        );
+        await provider.connection.confirmTransaction({
+          signature: airdrop,
+          ...(await provider.connection.getLatestBlockhash()),
+        });
+
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: newStaker.publicKey,
+          })
+          .signers([newStaker])
+          .rpc();
+
+        const [newStakerStakeAccountPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from("stake"), newStaker.publicKey.toBuffer()],
+          program.programId
+        );
+
+        const newStakerTokenAccount = await getAssociatedTokenAddress(
+          mintPda,
+          newStaker.publicKey
+        );
+
+        try {
+          await program.methods
+            .stake(tooLargeAmount, lockDuration)
+            .accounts({
+              stakeAccount: newStakerStakeAccountPda,
+              userTokenAccount: newStakerTokenAccount,
+              vault: vaultPda,
+              user: newStaker.publicKey,
+            })
+            .signers([newStaker])
+            .rpc();
+
+          expect.fail("Should have thrown AmountTooLarge error");
+        } catch (error: any) {
+          expect(error.error?.errorCode?.number).to.equal(6002); // AmountTooLarge
+        }
+      });
+
+      it("should fail when duration is too short (< 7 days)", async () => {
+        const stakeAmount = new anchor.BN(10_000_000_000); // 10 DEVR
+        const tooShortDuration = new anchor.BN(3 * SECONDS_PER_DAY); // 3 days
+
+        const newStaker = Keypair.generate();
+
+        const airdrop = await provider.connection.requestAirdrop(
+          newStaker.publicKey,
+          2 * anchor.web3.LAMPORTS_PER_SOL
+        );
+        await provider.connection.confirmTransaction({
+          signature: airdrop,
+          ...(await provider.connection.getLatestBlockhash()),
+        });
+
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: newStaker.publicKey,
+          })
+          .signers([newStaker])
+          .rpc();
+
+        const [newStakerStakeAccountPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from("stake"), newStaker.publicKey.toBuffer()],
+          program.programId
+        );
+
+        const newStakerTokenAccount = await getAssociatedTokenAddress(
+          mintPda,
+          newStaker.publicKey
+        );
+
+        try {
+          await program.methods
+            .stake(stakeAmount, tooShortDuration)
+            .accounts({
+              stakeAccount: newStakerStakeAccountPda,
+              userTokenAccount: newStakerTokenAccount,
+              vault: vaultPda,
+              user: newStaker.publicKey,
+            })
+            .signers([newStaker])
+            .rpc();
+
+          expect.fail("Should have thrown DurationTooShort error");
+        } catch (error: any) {
+          expect(error.error?.errorCode?.number).to.equal(6007); // DurationTooShort
+        }
+      });
+
+      it("should fail when duration is too long (> 10 years)", async () => {
+        const stakeAmount = new anchor.BN(10_000_000_000); // 10 DEVR
+        const tooLongDuration = new anchor.BN(11 * 365 * SECONDS_PER_DAY); // 11 years
+
+        const newStaker = Keypair.generate();
+
+        const airdrop = await provider.connection.requestAirdrop(
+          newStaker.publicKey,
+          2 * anchor.web3.LAMPORTS_PER_SOL
+        );
+        await provider.connection.confirmTransaction({
+          signature: airdrop,
+          ...(await provider.connection.getLatestBlockhash()),
+        });
+
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: newStaker.publicKey,
+          })
+          .signers([newStaker])
+          .rpc();
+
+        const [newStakerStakeAccountPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from("stake"), newStaker.publicKey.toBuffer()],
+          program.programId
+        );
+
+        const newStakerTokenAccount = await getAssociatedTokenAddress(
+          mintPda,
+          newStaker.publicKey
+        );
+
+        try {
+          await program.methods
+            .stake(stakeAmount, tooLongDuration)
+            .accounts({
+              stakeAccount: newStakerStakeAccountPda,
+              userTokenAccount: newStakerTokenAccount,
+              vault: vaultPda,
+              user: newStaker.publicKey,
+            })
+            .signers([newStaker])
+            .rpc();
+
+          expect.fail("Should have thrown DurationTooLong error");
+        } catch (error: any) {
+          expect(error.error?.errorCode?.number).to.equal(6008); // DurationTooLong
+        }
+      });
+
+      it("should fail when user has insufficient balance", async () => {
+        const newStaker = Keypair.generate();
+
+        const airdrop = await provider.connection.requestAirdrop(
+          newStaker.publicKey,
+          2 * anchor.web3.LAMPORTS_PER_SOL
+        );
+        await provider.connection.confirmTransaction({
+          signature: airdrop,
+          ...(await provider.connection.getLatestBlockhash()),
+        });
+
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: newStaker.publicKey,
+          })
+          .signers([newStaker])
+          .rpc();
+
+        // Try to stake more than they have (they have 100 DEVR)
+        const excessiveAmount = new anchor.BN(200_000_000_000); // 200 DEVR
+        const lockDuration = new anchor.BN(MIN_LOCK_DURATION);
+
+        const [newStakerStakeAccountPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from("stake"), newStaker.publicKey.toBuffer()],
+          program.programId
+        );
+
+        const newStakerTokenAccount = await getAssociatedTokenAddress(
+          mintPda,
+          newStaker.publicKey
+        );
+
+        try {
+          await program.methods
+            .stake(excessiveAmount, lockDuration)
+            .accounts({
+              stakeAccount: newStakerStakeAccountPda,
+              userTokenAccount: newStakerTokenAccount,
+              vault: vaultPda,
+              user: newStaker.publicKey,
+            })
+            .signers([newStaker])
+            .rpc();
+
+          expect.fail("Should have thrown InsufficientBalance error");
+        } catch (error: any) {
+          expect(error.error?.errorCode?.number).to.equal(6003); // InsufficientBalance
+        }
+      });
+    });
+
+    describe("Unstake Instruction", () => {
+      let unstaker: Keypair;
+      let unstakerTokenAccount: PublicKey;
+      let unstakerStakeAccountPda: PublicKey;
+
+      before(async () => {
+        // Create new user for unstake tests
+        unstaker = Keypair.generate();
+
+        const airdrop = await provider.connection.requestAirdrop(
+          unstaker.publicKey,
+          5 * anchor.web3.LAMPORTS_PER_SOL
+        );
+        await provider.connection.confirmTransaction({
+          signature: airdrop,
+          ...(await provider.connection.getLatestBlockhash()),
+        });
+
+        [unstakerStakeAccountPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from("stake"), unstaker.publicKey.toBuffer()],
+          program.programId
+        );
+
+        unstakerTokenAccount = await getAssociatedTokenAddress(mintPda, unstaker.publicKey);
+
+        // Claim tokens
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: unstaker.publicKey,
+          })
+          .signers([unstaker])
+          .rpc();
+
+        // Stake 50 DEVR for 7 days (minimum duration for faster testing)
+        const stakeAmount = new anchor.BN(50_000_000_000); // 50 DEVR
+        const lockDuration = new anchor.BN(MIN_LOCK_DURATION); // 7 days
+
+        await program.methods
+          .stake(stakeAmount, lockDuration)
+          .accounts({
+            stakeAccount: unstakerStakeAccountPda,
+            userTokenAccount: unstakerTokenAccount,
+            vault: vaultPda,
+            user: unstaker.publicKey,
+          })
+          .signers([unstaker])
+          .rpc();
+      });
+
+      it("should fail to unstake when tokens are still locked", async () => {
+        try {
+          await program.methods
+            .unstake()
+            .accounts({
+              stakeAccount: unstakerStakeAccountPda,
+              userTokenAccount: unstakerTokenAccount,
+              vault: vaultPda,
+              vaultAuthority: vaultAuthorityPda,
+              user: unstaker.publicKey,
+            })
+            .signers([unstaker])
+            .rpc();
+
+          expect.fail("Should have thrown StillLocked error");
+        } catch (error: any) {
+          expect(error.error?.errorCode?.number).to.equal(6005); // StillLocked
+        }
+      });
+
+      it("should verify stake account state during lock period", async () => {
+        const stakeAccount = await program.account.stakeAccount.fetch(unstakerStakeAccountPda);
+
+        expect(stakeAccount.user.toString()).to.equal(unstaker.publicKey.toString());
+        expect(stakeAccount.stakedAmount.toString()).to.equal("50000000000");
+        expect(stakeAccount.lockDuration.toString()).to.equal(MIN_LOCK_DURATION.toString());
+        expect(stakeAccount.stakedAt.toNumber()).to.be.greaterThan(0);
+      });
+
+      it("should calculate expected rewards correctly (10% APY)", async () => {
+        const stakeAccount = await program.account.stakeAccount.fetch(unstakerStakeAccountPda);
+
+        const stakedAmount = stakeAccount.stakedAmount.toNumber();
+        const lockDuration = stakeAccount.lockDuration.toNumber();
+
+        // APY calculation: 10% = 110/100
+        const APY_NUMERATOR = 110;
+        const APY_DENOMINATOR = 100;
+        const SECONDS_PER_YEAR = 365 * 24 * 60 * 60;
+
+        const amountWithApy = (stakedAmount * APY_NUMERATOR) / APY_DENOMINATOR;
+        const expectedRewards = Math.floor((amountWithApy * lockDuration) / SECONDS_PER_YEAR);
+
+        // For 50 DEVR staked for 7 days at 10% APY:
+        // amountWithApy = 50 * 1.1 = 55 DEVR
+        // rewards = (55 * 7 days) / 365 days ≈ 1.05 DEVR
+
+        expect(expectedRewards).to.be.greaterThan(0);
+        console.log(`        Expected rewards for 50 DEVR / 7 days: ${expectedRewards / 1_000_000_000} DEVR`);
+      });
+    });
+
+    describe("Multiple Users Staking", () => {
+      it("should handle multiple users staking independently", async () => {
+        const user1 = Keypair.generate();
+        const user2 = Keypair.generate();
+
+        // Setup user1
+        const airdrop1 = await provider.connection.requestAirdrop(
+          user1.publicKey,
+          2 * anchor.web3.LAMPORTS_PER_SOL
+        );
+        await provider.connection.confirmTransaction({
+          signature: airdrop1,
+          ...(await provider.connection.getLatestBlockhash()),
+        });
+
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: user1.publicKey,
+          })
+          .signers([user1])
+          .rpc();
+
+        // Setup user2
+        const airdrop2 = await provider.connection.requestAirdrop(
+          user2.publicKey,
+          2 * anchor.web3.LAMPORTS_PER_SOL
+        );
+        await provider.connection.confirmTransaction({
+          signature: airdrop2,
+          ...(await provider.connection.getLatestBlockhash()),
+        });
+
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: user2.publicKey,
+          })
+          .signers([user2])
+          .rpc();
+
+        // User1 stakes 30 DEVR for 15 days
+        const [user1StakeAccountPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from("stake"), user1.publicKey.toBuffer()],
+          program.programId
+        );
+        const user1TokenAccount = await getAssociatedTokenAddress(mintPda, user1.publicKey);
+
+        await program.methods
+          .stake(new anchor.BN(30_000_000_000), new anchor.BN(15 * SECONDS_PER_DAY))
+          .accounts({
+            stakeAccount: user1StakeAccountPda,
+            userTokenAccount: user1TokenAccount,
+            vault: vaultPda,
+            user: user1.publicKey,
+          })
+          .signers([user1])
+          .rpc();
+
+        // User2 stakes 70 DEVR for 30 days
+        const [user2StakeAccountPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from("stake"), user2.publicKey.toBuffer()],
+          program.programId
+        );
+        const user2TokenAccount = await getAssociatedTokenAddress(mintPda, user2.publicKey);
+
+        await program.methods
+          .stake(new anchor.BN(70_000_000_000), new anchor.BN(30 * SECONDS_PER_DAY))
+          .accounts({
+            stakeAccount: user2StakeAccountPda,
+            userTokenAccount: user2TokenAccount,
+            vault: vaultPda,
+            user: user2.publicKey,
+          })
+          .signers([user2])
+          .rpc();
+
+        // Verify both stake accounts are independent
+        const user1StakeAccount = await program.account.stakeAccount.fetch(user1StakeAccountPda);
+        const user2StakeAccount = await program.account.stakeAccount.fetch(user2StakeAccountPda);
+
+        expect(user1StakeAccount.stakedAmount.toString()).to.equal("30000000000");
+        expect(user1StakeAccount.lockDuration.toString()).to.equal((15 * SECONDS_PER_DAY).toString());
+
+        expect(user2StakeAccount.stakedAmount.toString()).to.equal("70000000000");
+        expect(user2StakeAccount.lockDuration.toString()).to.equal((30 * SECONDS_PER_DAY).toString());
+
+        // Verify vault has accumulated both stakes
+        const vaultBalance = await getAccount(provider.connection, vaultPda);
+        expect(Number(vaultBalance.amount)).to.be.greaterThanOrEqual(100_000_000_000); // At least 100 DEVR
+      });
+    });
+
+    describe("Vault Balance Verification", () => {
+      it("should track vault balance correctly after multiple stakes", async () => {
+        const vaultBalanceBefore = await getAccount(provider.connection, vaultPda);
+
+        const newStaker = Keypair.generate();
+        const airdrop = await provider.connection.requestAirdrop(
+          newStaker.publicKey,
+          2 * anchor.web3.LAMPORTS_PER_SOL
+        );
+        await provider.connection.confirmTransaction({
+          signature: airdrop,
+          ...(await provider.connection.getLatestBlockhash()),
+        });
+
+        await program.methods
+          .claimTokens()
+          .accounts({
+            mint: mintPda,
+            user: newStaker.publicKey,
+          })
+          .signers([newStaker])
+          .rpc();
+
+        const stakeAmount = new anchor.BN(25_000_000_000); // 25 DEVR
+
+        const [newStakerStakeAccountPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from("stake"), newStaker.publicKey.toBuffer()],
+          program.programId
+        );
+        const newStakerTokenAccount = await getAssociatedTokenAddress(mintPda, newStaker.publicKey);
+
+        await program.methods
+          .stake(stakeAmount, new anchor.BN(MIN_LOCK_DURATION))
+          .accounts({
+            stakeAccount: newStakerStakeAccountPda,
+            userTokenAccount: newStakerTokenAccount,
+            vault: vaultPda,
+            user: newStaker.publicKey,
+          })
+          .signers([newStaker])
+          .rpc();
+
+        const vaultBalanceAfter = await getAccount(provider.connection, vaultPda);
+
+        expect(vaultBalanceAfter.amount).to.equal(
+          vaultBalanceBefore.amount + BigInt(stakeAmount.toString())
+        );
+      });
+    });
+  });
 });
