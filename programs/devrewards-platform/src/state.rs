@@ -28,3 +28,17 @@ pub struct UserClaim {
 impl UserClaim {
     pub const LEN: usize = 8 + Self::INIT_SPACE;
 }
+
+#[account]
+#[derive(InitSpace)]
+pub struct StakeAccount {
+    pub user: Pubkey,
+    pub staked_amount: u64,
+    pub staked_at: i64,
+    pub lock_duration: i64,
+    pub bump: u8,               
+}
+
+impl StakeAccount {
+    pub const LEN: usize = 8 + Self::INIT_SPACE;
+}
