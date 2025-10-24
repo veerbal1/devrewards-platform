@@ -1141,17 +1141,20 @@ describe("devrewards-platform", () => {
         const stakedAmount = stakeAccount.stakedAmount.toNumber();
         const lockDuration = stakeAccount.lockDuration.toNumber();
 
-        // APY calculation: 10% = 110/100
-        const APY_NUMERATOR = 110;
+        // APY calculation: 10% = 10/100 (matches constants.rs)
+        const APY_NUMERATOR = 10;
         const APY_DENOMINATOR = 100;
-        const SECONDS_PER_YEAR = 365 * 24 * 60 * 60;
+        const SECONDS_PER_YEAR = 31_536_000; // 365 days in seconds
 
+        // Step 1: Calculate 10% of staked amount
         const amountWithApy = (stakedAmount * APY_NUMERATOR) / APY_DENOMINATOR;
+
+        // Step 2: Calculate time-proportional rewards
         const expectedRewards = Math.floor((amountWithApy * lockDuration) / SECONDS_PER_YEAR);
 
         // For 50 DEVR staked for 7 days at 10% APY:
-        // amountWithApy = 50 * 1.1 = 55 DEVR
-        // rewards = (55 * 7 days) / 365 days ≈ 1.05 DEVR
+        // amountWithApy = 50 * 10 / 100 = 5 DEVR (10% of principal)
+        // rewards = (5 DEVR * 604,800 seconds) / 31,536,000 seconds ≈ 0.0958 DEVR
 
         expect(expectedRewards).to.be.greaterThan(0);
         console.log(`        Expected rewards for 50 DEVR / 7 days: ${expectedRewards / 1_000_000_000} DEVR`);
