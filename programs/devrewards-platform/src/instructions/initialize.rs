@@ -1,6 +1,6 @@
 use crate::state::TokenConfig;
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Mint, Token};
+use anchor_spl::token::{Mint, Token, TokenAccount};
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
@@ -30,6 +30,12 @@ pub struct Initialize<'info> {
     )]
     pub mint_authority: UncheckedAccount<'info>,
 
+    #[account(init, payer = admin, token::mint = mint, token::authority = vault_authority, seeds=[b"vault"], bump)]
+    pub vault: Account<'info, TokenAccount>,
+
+    #[account(seeds=[b"vault-authority"], bump)]
+    pub vault_authority: UncheckedAccount<'info>,
+
     #[account(mut)]
     pub admin: Signer<'info>,
 
@@ -52,5 +58,7 @@ pub fn handler(ctx: Context<Initialize>) -> Result<()> {
     msg!("DevRewards initialized!");
     msg!("Mint: {}", config.mint);
     msg!("Authority: {}", config.mint_authority);
+    msg!("Vault: {}", ctx.accounts.vault.key());
+    msg!("Vault Authority: {}", ctx.accounts.vault_authority.key());
     Ok(())
 }
