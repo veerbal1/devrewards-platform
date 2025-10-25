@@ -14,6 +14,7 @@ pub struct TokenConfig {
     pub mint_bump: u8,
     pub vault_bump: u8,
     pub vault_authority_bump: u8,
+    pub global_stats_bump: u8
 }
 
 impl TokenConfig {

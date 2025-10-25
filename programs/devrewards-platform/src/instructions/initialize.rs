@@ -1,4 +1,4 @@
-use crate::state::TokenConfig;
+use crate::state::{GlobalStats, TokenConfig};
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
@@ -49,6 +49,9 @@ pub struct Initialize<'info> {
     )]
     pub vault_authority: UncheckedAccount<'info>,
 
+    #[account(init, seeds=[b"global-stats"], bump, payer = admin, space = GlobalStats::INIT_SPACE)]
+    pub global_stats: Account<'info, GlobalStats>,
+
     #[account(mut)]
     pub admin: Signer<'info>,
 
@@ -71,6 +74,7 @@ pub fn handler(ctx: Context<Initialize>) -> Result<()> {
     config.mint_bump = ctx.bumps.mint;
     config.vault_bump = ctx.bumps.vault;
     config.vault_authority_bump = ctx.bumps.vault_authority;
+    ctx.accounts.global_stats.bump = ctx.bumps.global_stats;
 
     msg!("✅ DevRewards initialized!");
     msg!("Mint: {}", config.mint);
