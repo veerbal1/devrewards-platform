@@ -40,9 +40,34 @@ pub struct StakeAccount {
     pub staked_amount: u64,
     pub staked_at: i64,
     pub lock_duration: i64,
-    pub bump: u8,               
+    pub stake_index: u64,
+    pub bump: u8,
 }
 
 impl StakeAccount {
+    pub const LEN: usize = 8 + Self::INIT_SPACE;
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct StakeCounter {
+    pub stake_count: u64, // 8 bytes - Total stakes created
+    pub bump: u8,         // 1 byte - PDA bump
+}
+
+impl StakeCounter {
+    pub const LEN: usize = 8 + Self::INIT_SPACE; // discriminator + stake_count + bump
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct GlobalStats {
+    pub total_staked: u64,       // Total DEVR staked across all users
+    pub total_stakes: u64,       // Total stake positions
+    pub total_rewards_paid: u64, // Total rewards distributed
+    pub bump: u8,
+}
+
+impl GlobalStats {
     pub const LEN: usize = 8 + Self::INIT_SPACE;
 }

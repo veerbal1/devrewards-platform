@@ -56,7 +56,9 @@ pub fn handler(ctx: Context<Unstake>) -> Result<()> {
 
     let staked_amount = stake_account.staked_amount;
 
-    let amount_with_apy = (staked_amount * APY_NUMERATOR) / APY_DENOMINATOR;
+    // Get the appropriate APY based on lock duration
+    let (apy_numerator, apy_denominator) = get_apy_for_duration(stake_account.lock_duration);
+    let amount_with_apy = (staked_amount * apy_numerator) / apy_denominator;
 
     let rewards = (amount_with_apy * time_elapsed as u64) / SECONDS_PER_YEAR;
 

@@ -7,6 +7,7 @@ mod constants;
 mod error;
 mod instructions;
 mod state;
+mod events;
 
 #[program]
 pub mod devrewards_platform {
