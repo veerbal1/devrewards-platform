@@ -27,5 +27,8 @@ pub enum ErrorCode {
     DurationTooShort = 7,
 
     #[msg("Staking duration exceeds maximum allowed period!")]
-    DurationTooLong = 8
+    DurationTooLong = 8,
+
+    #[msg("Arithmetic overflow occurred during calculation!")]
+    ArithmeticOverflow = 9
 }

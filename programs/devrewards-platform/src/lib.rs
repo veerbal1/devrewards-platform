@@ -41,7 +41,7 @@ pub mod devrewards_platform {
         instructions::stake::handler(ctx, amount, lock_duration)
     }
 
-    pub fn unstake(ctx: Context<Unstake>) -> Result<()> {
-        instructions::unstake::handler(ctx)
+    pub fn unstake(ctx: Context<Unstake>, stake_count: u64) -> Result<()> {
+        instructions::unstake::handler(ctx, stake_count)
     }
 }

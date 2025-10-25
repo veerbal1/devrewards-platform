@@ -49,7 +49,13 @@ pub struct Initialize<'info> {
     )]
     pub vault_authority: UncheckedAccount<'info>,
 
-    #[account(init, seeds=[b"global-stats"], bump, payer = admin, space = GlobalStats::INIT_SPACE)]
+    #[account(
+        init,
+        payer = admin,
+        space = GlobalStats::LEN,
+        seeds = [b"global-stats"],
+        bump
+    )]
     pub global_stats: Account<'info, GlobalStats>,
 
     #[account(mut)]
@@ -74,7 +80,14 @@ pub fn handler(ctx: Context<Initialize>) -> Result<()> {
     config.mint_bump = ctx.bumps.mint;
     config.vault_bump = ctx.bumps.vault;
     config.vault_authority_bump = ctx.bumps.vault_authority;
-    ctx.accounts.global_stats.bump = ctx.bumps.global_stats;
+    config.global_stats_bump = ctx.bumps.global_stats;
+
+    // Initialize global stats
+    let global_stats = &mut ctx.accounts.global_stats;
+    global_stats.total_staked = 0;
+    global_stats.total_stakes = 0;
+    global_stats.total_rewards_paid = 0;
+    global_stats.bump = ctx.bumps.global_stats;
 
     msg!("✅ DevRewards initialized!");
     msg!("Mint: {}", config.mint);
