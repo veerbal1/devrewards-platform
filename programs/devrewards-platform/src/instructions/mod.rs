@@ -6,6 +6,7 @@ pub mod delegated_transfer;
 pub mod revoke_delegate;
 pub mod stake;
 pub mod unstake;
+pub mod create_metadata;
 
 pub use initialize::*;
 pub use claim_tokens::*;
@@ -15,3 +16,4 @@ pub use delegated_transfer::*;
 pub use revoke_delegate::*;
 pub use stake::*;
 pub use unstake::*;
+pub use create_metadata::*;

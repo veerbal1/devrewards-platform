@@ -44,4 +44,13 @@ pub mod devrewards_platform {
     pub fn unstake(ctx: Context<Unstake>, stake_count: u64) -> Result<()> {
         instructions::unstake::handler(ctx, stake_count)
     }
+
+    pub fn create_metadata(
+        ctx: Context<CreateMetadata>,
+        name: String,
+        symbol: String,
+        uri: String,
+    ) -> Result<()> {
+        instructions::create_metadata::handler(ctx, name, symbol, uri)
+    }
 }
