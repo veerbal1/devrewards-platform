@@ -1,3 +1,4 @@
+use crate::error::ErrorCode;
 use crate::state::TokenConfig;
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::program::invoke_signed;
@@ -62,6 +63,25 @@ pub fn handler(
     symbol: String,
     uri: String,
 ) -> Result<()> {
+    // Validate name
+    require!(!name.is_empty(), ErrorCode::NameEmpty);
+    require!(name.len() <= 32, ErrorCode::NameTooLong);
+
+    // Validate symbol
+    require!(!symbol.is_empty(), ErrorCode::SymbolEmpty);
+    require!(symbol.len() <= 10, ErrorCode::SymbolTooLong);
+
+    // Validate URI
+    require!(!uri.is_empty(), ErrorCode::UriEmpty);
+    require!(uri.len() <= 200, ErrorCode::UriTooLong);
+
+    // Validate URI format (must start with https:// or ipfs://)
+    let uri_lower = uri.to_lowercase();
+    require!(
+        uri_lower.starts_with("https://") || uri_lower.starts_with("ipfs://"),
+        ErrorCode::InvalidUriFormat
+    );
+
     msg!("Creating metadata for token: {}", ctx.accounts.mint.key());
     msg!("Name: {}, Symbol: {}, URI: {}", name, symbol, uri);
 

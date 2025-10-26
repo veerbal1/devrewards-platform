@@ -73,6 +73,48 @@ Advanced staking features and comprehensive tests:
   - Amount/duration constraints
   - Malicious action prevention
 
+#### `metadata.test.ts`
+Tests for Metaplex Token Metadata integration:
+- **Create Token Metadata**
+  - Successful metadata account creation
+  - Metadata properties verification
+  - Update authority validation
+  - Duplicate creation prevention
+- **Metadata Input Validation**
+  - Valid token name/symbol/URI
+  - Maximum length handling (32 chars for name, 10 for symbol)
+  - Format validation
+- **Metadata Account Structure**
+  - Correct PDA derivation
+  - Program ownership
+  - Rent exemption
+  - Data integrity
+- **Integration with Token**
+  - Mint association
+  - Token operations compatibility
+- **Metadata Mutability**
+  - Mutable flag setting
+  - Update authority control
+- **Metadata Fields**
+  - Seller fees (0 for governance token)
+  - Creators, collection, uses (all None)
+  - Collection details
+- **Security & Access Control**
+  - Mint authority validation
+  - Config PDA validation
+  - Program ID verification
+- **Metadata Validation Errors** ⭐ NEW
+  - Empty name/symbol/URI rejection
+  - Name too long (>32 chars)
+  - Symbol too long (>10 chars)
+  - URI too long (>200 chars)
+  - Invalid URI format (must be https:// or ipfs://)
+  - IPFS URI acceptance
+- **Display Information**
+  - Token name display
+  - Symbol display
+  - URI validity
+
 ### Utility Files
 
 #### `utils/test-helpers.ts`
@@ -105,6 +147,7 @@ anchor test --test-file token-claims.test.ts
 anchor test --test-file transfers.test.ts
 anchor test --test-file staking-basic.test.ts
 anchor test --test-file staking-advanced.test.ts
+anchor test --test-file metadata.test.ts
 ```
 
 ### Run tests in watch mode
@@ -123,7 +166,7 @@ npm run test:watch
 
 ## Migration from Original
 
-The original `devrewards-platform.ts` file has been refactored into this modular structure. If you need the original file for reference, it has been renamed to `devrewards-platform.ts.backup`.
+The original `devrewards-platform.ts` file (2351 lines) has been refactored into 6 focused test files plus utilities. If you need the original file for reference, it has been renamed to `devrewards-platform.ts.backup`.
 
 ## Adding New Tests
 

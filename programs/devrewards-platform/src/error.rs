@@ -30,5 +30,27 @@ pub enum ErrorCode {
     DurationTooLong = 8,
 
     #[msg("Arithmetic overflow occurred during calculation!")]
-    ArithmeticOverflow = 9
+    ArithmeticOverflow = 9,
+
+    // Metadata-related errors
+    #[msg("Token name is too long! Maximum 32 characters allowed.")]
+    NameTooLong = 10,
+
+    #[msg("Token symbol is too long! Maximum 10 characters allowed.")]
+    SymbolTooLong = 11,
+
+    #[msg("Token URI is too long! Maximum 200 characters allowed.")]
+    UriTooLong = 12,
+
+    #[msg("Token name cannot be empty!")]
+    NameEmpty = 13,
+
+    #[msg("Token symbol cannot be empty!")]
+    SymbolEmpty = 14,
+
+    #[msg("Token URI cannot be empty!")]
+    UriEmpty = 15,
+
+    #[msg("Invalid URI format! Must start with https:// or ipfs://")]
+    InvalidUriFormat = 16,
 }
