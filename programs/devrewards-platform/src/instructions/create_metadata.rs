@@ -123,8 +123,6 @@ pub fn handler(
         create_metadata_args,
     )
     .invoke_signed(signer)?;
-
     msg!("✅ Metadata successfully created!");
-
     Ok(())
 }
